@@ -4,33 +4,42 @@ import * as mongodb from "mongodb";
 import * as _ from "lodash";
 
 const { MongoClient } = require("mongodb");
-const mongoHost = _.get(process.env, "MONGODB_HOST", undefined);
-const mongoPass = _.get(process.env, "MONGODB_ROOT_PASSWORD", undefined);
-const uri = `mongodb://root:${mongoPass}@${mongoHost}:27017`;
-logger.debug("mongodb uri", uri);
-const client = new MongoClient(uri);
+const mongoDbHost = _.get(process.env, "MongoDbHost", undefined);
+const mongoDbPort = _.get(process.env, "MongoDbPort", 27017);
+const MongoDbUser = _.get(process.env, "MongoDbUser", undefined);
+const MongoDbPass = _.get(process.env, "MongoDbPass", undefined);
+const MongoDbLpStore = _.get(process.env, "MongoDbLpStore", undefined);
+const MongoDbBusiness = _.get(process.env, "MongoDbBusiness", undefined);
+
+const mongoClientSet = new Map();
+const storeUrl = `mongodb://${MongoDbUser}:${MongoDbPass}@${mongoDbHost}:${mongoDbPort}/${MongoDbLpStore}?authSource=${MongoDbLpStore}`;
+const businessUrl = `mongodb://${MongoDbUser}:${MongoDbPass}@${mongoDbHost}:${mongoDbPort}/${MongoDbBusiness}?authSource=${MongoDbBusiness}`;
+
+const storeClient = new MongoClient(storeUrl);
+storeClient.connect();
+const businessClient = new MongoClient(businessUrl);
+businessClient.connect();
+logger.info(`MongoDbLpStore: ${storeUrl}`);
+mongoClientSet.set(DatabaseDict.Lp, storeClient);
+logger.info(`MongoDbBusiness: ${businessUrl}`);
+mongoClientSet.set(DatabaseDict.Business, businessClient);
 import { SyslibRedis } from "./syslib_redis";
 import * as ioredisLib from "ioredis";
 import request, { AxiosStatic } from "axios";
 
 const syslibRedis = new SyslibRedis();
-const dbCache: Map<string, mongodb.Db> = new Map();
 
 class Syslib implements SyslibInterface {
-  public dbclient(): mongodb.MongoClient {
-    return client;
-  }
-
   public async database(databaseIndex: DatabaseDict): Promise<mongodb.Db> {
-    let database: any = dbCache.get(databaseIndex);
-    if (database) {
-      logger.debug(`get from cache`);
-      return database;
+    logger.info("databaseIndex: " + databaseIndex);
+    const dbClient = mongoClientSet.get(databaseIndex);
+    if (databaseIndex == DatabaseDict.Lp) {
+      return dbClient.db(MongoDbLpStore);
     }
-    if (!database) {
-      database = client.db(databaseIndex);
+    if (databaseIndex == DatabaseDict.Business) {
+      return dbClient.db(MongoDbBusiness);
     }
-    return database;
+    throw new Error("databaseIndex is not supported");
   }
 
   public fetch: AxiosStatic = request;

@@ -7,14 +7,23 @@ const argv = require("yargs-parser")(process.argv.slice(2));
   let execResult;
   let stderr = "";
   let execError;
+  const userScriptName = _.get(argv, "script", undefined);
+  const debugFlag = _.get(argv, "debug", undefined);
   const container = async () => {
-    let userScriptName = _.get(argv, "script", undefined);
-    // if (!userScriptName) {
-    //   throw new Error(`user script not found`);
-    // }
+    const executeMode = _.get(argv, "module", undefined);
+    console.log("userScriptName", userScriptName);
+    console.log("executeMode", executeMode);
+    if (!userScriptName) {
+      throw new Error(`user script not found`);
+    }
     return new Promise((resolve, reject) => {
-      userScriptName = "./src/user_script.js";
-      const subProcess = child_process.fork(userScriptName, [], {
+      let basePath = `/user-script/run-script/`;
+      if (debugFlag == "true") {
+        basePath = __dirname;
+      }
+      const scriptFullPath = `${basePath}${userScriptName}`;
+      console.log("execute user script fullpath:", scriptFullPath);
+      const subProcess = child_process.fork(scriptFullPath, [], {
         timeout: 5000,
         stdio: ["overlapped", "overlapped", "overlapped", "ipc"],
       });
@@ -30,11 +39,29 @@ const argv = require("yargs-parser")(process.argv.slice(2));
       });
       subProcess.on("error", (err: any) => {
         console.log(err);
+        reject(err);
       });
-      subProcess.send({ system_data: { a: 1 } });
+      // console.log("subProcess.send", { system_data: { env: process.env } });
+      subProcess.send({ system_data: { env: process.env } });
       subProcess.on("close", () => {
-        resolve(execResult);
+        if (typeof execResult === "string") {
+          resolve(execResult);
+          console.log("sub process close");
+          return;
+        }
+        if (typeof execResult === "object") {
+          resolve(JSON.stringify(execResult));
+          console.log("sub process close");
+          return;
+        }
+        if (typeof execResult === "undefined") {
+          resolve("undefined");
+          console.log("sub process close");
+          return;
+        }
+        resolve("unknown result type");
         console.log("sub process close");
+        return;
       });
     });
   };
@@ -54,6 +81,7 @@ const argv = require("yargs-parser")(process.argv.slice(2));
   console.log("get A db");
   await db.collection("monitor_historys").insertMany([
     {
+      scriptName: userScriptName,
       execResult,
       stdout,
       stderr,
